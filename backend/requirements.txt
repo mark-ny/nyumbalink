@@ -15,7 +15,6 @@ bleach==6.1.0
 marshmallow==3.21.2
 marshmallow-sqlalchemy==1.0.0
 cloudinary==1.40.0
-Pillow==10.3.0
 redis==5.0.4
 elasticsearch==8.13.0
 requests==2.31.0
