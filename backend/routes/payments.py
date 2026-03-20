@@ -88,7 +88,7 @@ def mpesa_callback():
 
             payment.status = 'completed'
             payment.mpesa_receipt = metadata.get('MpesaReceiptNumber')
-            payment.metadata = metadata
+            payment.extra_data = metadata
 
             # Activate listing if this is a listing fee
             if payment.property_id:

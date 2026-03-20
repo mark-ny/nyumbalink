@@ -75,7 +75,7 @@ class Payment(db.Model):
     phone_number = db.Column(db.String(20))
     status = db.Column(db.String(20), default='pending')  # pending, completed, failed, refunded
     description = db.Column(db.Text)
-    metadata = db.Column(db.JSON)
+    extra_data = db.Column(db.JSON)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
