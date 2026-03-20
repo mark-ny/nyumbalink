@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "name": "nyumbalink",
+  "framework": "create-react-app",
+
+  "buildCommand": "npm run build",
+  "outputDirectory": "build",
+  "installCommand": "npm ci",
+
+  "regions": ["iad1"],
+
+  "build": {
+    "env": {
+      "REACT_APP_API_URL": "@nyumbalink_api_url",
+      "REACT_APP_GOOGLE_MAPS_API_KEY": "@nyumbalink_maps_key",
+      "REACT_APP_CLOUDINARY_CLOUD_NAME": "@nyumbalink_cloudinary_name",
+      "REACT_APP_SITE_NAME": "NyumbaLink",
+      "REACT_APP_SITE_URL": "https://nyumbalink.vercel.app",
+      "GENERATE_SOURCEMAP": "false",
+      "NODE_OPTIONS": "--max-old-space-size=4096"
+    }
+  },
+
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://nyumbalink-api.onrender.com/api/$1",
+      "headers": {
+        "X-Forwarded-For": "$remote_addr"
+      }
+    },
+    {
+      "src": "/sitemap.xml",
+      "dest": "https://nyumbalink-api.onrender.com/api/seo/sitemap.xml"
+    },
+    {
+      "src": "/robots.txt",
+      "dest": "https://nyumbalink-api.onrender.com/api/seo/robots.txt"
+    },
+    {
+      "src": "/static/(.*)",
+      "dest": "/static/$1",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|webp))",
+      "dest": "/$1",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options",   "value": "nosniff" },
+        { "key": "X-Frame-Options",           "value": "SAMEORIGIN" },
+        { "key": "X-XSS-Protection",          "value": "1; mode=block" },
+        { "key": "Referrer-Policy",           "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy",        "value": "geolocation=(self)" }
+      ]
+    },
+    {
+      "source": "/static/(.*)",
+      "headers": [
+        { "key": "cache-control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,893 @@
+openapi: 3.1.0
+
+info:
+  title: NyumbaLink API
+  version: "1.0.0"
+  description: |
+    ## Kenya's Property Marketplace REST API
+
+    **Base URL:** `https://nyumbalink.co.ke/api`
+
+    ### Authentication
+    All protected endpoints require a JWT Bearer token obtained from `/auth/login`.
+    Include it as: `Authorization: Bearer <access_token>`
+
+    ### Rate Limiting
+    | Scope           | Limit             |
+    |-----------------|-------------------|
+    | Global          | 200 req/day, 50/hr |
+    | Auth endpoints  | 10 req/min        |
+    | File uploads    | 20 req/hr         |
+
+    ### Pagination
+    List endpoints accept:
+    | Param     | Type    | Default | Description              |
+    |-----------|---------|---------|--------------------------|
+    | page      | integer | 1       | Page number (1-indexed)  |
+    | per_page  | integer | 12      | Items per page (max 50)  |
+    | sort_by   | string  | created_at | Column to sort by     |
+    | sort_dir  | string  | desc    | `asc` or `desc`          |
+
+  contact:
+    name: NyumbaLink Support
+    email: support@nyumbalink.co.ke
+    url: https://nyumbalink.co.ke
+
+  license:
+    name: Proprietary
+    url: https://nyumbalink.co.ke/terms
+
+servers:
+  - url: https://nyumbalink.co.ke/api
+    description: Production
+  - url: http://localhost:5000/api
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Registration, login, JWT tokens
+  - name: Properties
+    description: CRUD for property listings
+  - name: Search
+    description: Elasticsearch-powered property search
+  - name: Inquiries
+    description: Contact owner about a property
+  - name: Viewings
+    description: Schedule property viewings
+  - name: Payments
+    description: M-Pesa STK Push listing fees
+  - name: Admin
+    description: Admin-only management endpoints
+  - name: SEO
+    description: Sitemaps, robots.txt, meta tags
+  - name: Notifications
+    description: In-app notification feed
+
+# ──────────────────────────────────────────────────────────────────────
+#  Security schemes
+# ──────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+# ──────────────────────────────────────────────────────────────────────
+#  Reusable schemas
+# ──────────────────────────────────────────────────────────────────────
+  schemas:
+
+    # ── Pagination envelope ───────────────────────────────────────────
+    PaginationMeta:
+      type: object
+      properties:
+        total:     { type: integer, example: 248 }
+        page:      { type: integer, example: 1 }
+        per_page:  { type: integer, example: 12 }
+        pages:     { type: integer, example: 21 }
+        has_prev:  { type: boolean, example: false }
+        has_next:  { type: boolean, example: true }
+        sort_by:   { type: string,  example: created_at }
+        sort_dir:  { type: string,  enum: [asc, desc], example: desc }
+        prev_url:  { type: string,  nullable: true }
+        next_url:  { type: string,  nullable: true }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:   { type: string, example: "Resource not found" }
+        details: { type: object, description: "Field-level validation errors" }
+
+    # ── User ──────────────────────────────────────────────────────────
+    UserPublic:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string, example: "Jane Wanjiru" }
+        role:       { type: string, enum: [admin, owner, seeker, agent] }
+        avatar_url: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    UserPrivate:
+      allOf:
+        - $ref: '#/components/schemas/UserPublic'
+        - type: object
+          properties:
+            email:          { type: string, format: email }
+            phone:          { type: string, example: "+254712345678", nullable: true }
+            email_verified: { type: boolean }
+            is_active:      { type: boolean }
+
+    # ── Property ──────────────────────────────────────────────────────
+    PropertyImage:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        image_url:  { type: string, format: uri }
+        is_primary: { type: boolean }
+        sort_order: { type: integer }
+
+    Property:
+      type: object
+      properties:
+        id:                  { type: string, format: uuid }
+        title:               { type: string, example: "3 Bed Apartment – Kilimani" }
+        description:         { type: string, nullable: true }
+        category:            { type: string, enum: [rent, short_stay, plot_sale] }
+        price:               { type: number, format: float, example: 45000 }
+        price_period:        { type: string, enum: [monthly, per_night, yearly, total], nullable: true }
+        location:            { type: string, example: "Kilimani, Nairobi" }
+        county:              { type: string, example: "Nairobi" }
+        town:                { type: string, example: "Kilimani" }
+        latitude:            { type: number, nullable: true }
+        longitude:           { type: number, nullable: true }
+        bedrooms:            { type: integer, nullable: true }
+        bathrooms:           { type: integer, nullable: true }
+        plot_size:           { type: number, nullable: true }
+        plot_size_unit:      { type: string, nullable: true }
+        floor_area:          { type: number, nullable: true }
+        amenities:           { type: array, items: { type: string } }
+        owner_id:            { type: string, format: uuid }
+        verification_status: { type: string, enum: [pending, verified, rejected] }
+        status:              { type: string, enum: [active, inactive, sold, rented] }
+        featured:            { type: boolean }
+        views_count:         { type: integer }
+        images:              { type: array, items: { $ref: '#/components/schemas/PropertyImage' } }
+        primary_image:       { $ref: '#/components/schemas/PropertyImage', nullable: true }
+        avg_rating:          { type: number, nullable: true }
+        created_at:          { type: string, format: date-time }
+        updated_at:          { type: string, format: date-time }
+
+    PropertyCreate:
+      type: object
+      required: [title, category, price, location]
+      properties:
+        title:        { type: string, minLength: 5, maxLength: 500 }
+        description:  { type: string, maxLength: 5000 }
+        category:     { type: string, enum: [rent, short_stay, plot_sale] }
+        price:        { type: number, minimum: 0 }
+        price_period: { type: string, enum: [monthly, per_night, yearly, total] }
+        location:     { type: string }
+        county:       { type: string }
+        town:         { type: string }
+        latitude:     { type: number }
+        longitude:    { type: number }
+        bedrooms:     { type: integer, minimum: 0 }
+        bathrooms:    { type: integer, minimum: 0 }
+        plot_size:    { type: number, minimum: 0 }
+        floor_area:   { type: number, minimum: 0 }
+        amenities:    { type: array, items: { type: string } }
+
+    # ── Inquiry ───────────────────────────────────────────────────────
+    Inquiry:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        property_id: { type: string, format: uuid }
+        user_id:     { type: string, format: uuid, nullable: true }
+        name:        { type: string }
+        email:       { type: string, format: email, nullable: true }
+        phone:       { type: string, nullable: true }
+        message:     { type: string }
+        is_read:     { type: boolean }
+        created_at:  { type: string, format: date-time }
+
+    # ── Viewing ───────────────────────────────────────────────────────
+    ViewingRequest:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        property_id:    { type: string, format: uuid }
+        name:           { type: string }
+        phone:          { type: string }
+        preferred_date: { type: string, format: date }
+        preferred_time: { type: string, example: "10:00" }
+        status:         { type: string, enum: [pending, confirmed, cancelled, completed] }
+        created_at:     { type: string, format: date-time }
+
+    # ── Payment ───────────────────────────────────────────────────────
+    Payment:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        user_id:        { type: string, format: uuid }
+        amount:         { type: number }
+        currency:       { type: string, example: KES }
+        payment_method: { type: string, example: mpesa }
+        status:         { type: string, enum: [pending, completed, failed, refunded] }
+        mpesa_receipt:  { type: string, nullable: true }
+        created_at:     { type: string, format: date-time }
+
+  # ── Shared responses ──────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+# ──────────────────────────────────────────────────────────────────────
+#  Paths
+# ──────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ────────────────────────────────────────────────────────
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags: [Auth]
+      responses:
+        "200":
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:  { type: string, example: ok }
+                  service: { type: string, example: NyumbaLink API }
+
+  # ── Auth ──────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      summary: Create a new user account
+      operationId: register
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:     { type: string, example: "Jane Wanjiru" }
+                email:    { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                phone:    { type: string, example: "+254712345678" }
+                role:     { type: string, enum: [seeker, owner], default: seeker }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:          { $ref: '#/components/schemas/UserPrivate' }
+                  access_token:  { type: string }
+                  refresh_token: { type: string }
+        "409": { description: Email already registered }
+        "400": { $ref: '#/components/responses/ValidationError' }
+
+  /auth/login:
+    post:
+      summary: Log in and get JWT tokens
+      operationId: login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:          { $ref: '#/components/schemas/UserPrivate' }
+                  access_token:  { type: string }
+                  refresh_token: { type: string }
+        "401": { description: Invalid credentials }
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token using refresh token
+      operationId: refreshToken
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      operationId: getMe
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/UserPrivate' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    put:
+      summary: Update profile (name, phone)
+      operationId: updateMe
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:  { type: string }
+                phone: { type: string }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/UserPrivate' }
+
+  /auth/logout:
+    post:
+      summary: Revoke tokens and log out
+      operationId: logout
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+
+  # ── Properties ────────────────────────────────────────────────────
+  /properties:
+    get:
+      summary: List published properties (with filters + pagination)
+      operationId: listProperties
+      tags: [Properties]
+      parameters:
+        - { name: page,        in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page,    in: query, schema: { type: integer, default: 12, maximum: 50 } }
+        - { name: sort_by,     in: query, schema: { type: string, enum: [price, created_at, views_count, bedrooms] } }
+        - { name: sort_dir,    in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+        - { name: category,    in: query, schema: { type: string, enum: [rent, short_stay, plot_sale] } }
+        - { name: county,      in: query, schema: { type: string }, example: Nairobi }
+        - { name: town,        in: query, schema: { type: string }, example: Kilimani }
+        - { name: min_price,   in: query, schema: { type: number } }
+        - { name: max_price,   in: query, schema: { type: number } }
+        - { name: bedrooms,    in: query, schema: { type: integer } }
+        - { name: min_plot,    in: query, schema: { type: number } }
+        - { name: q,           in: query, schema: { type: string }, description: Keyword search }
+        - { name: featured,    in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Paginated property list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:       { type: array, items: { $ref: '#/components/schemas/Property' } }
+                  pagination: { $ref: '#/components/schemas/PaginationMeta' }
+
+    post:
+      summary: Create a new property listing (owners only)
+      operationId: createProperty
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PropertyCreate' }
+      responses:
+        "201":
+          description: Property created (status=pending verification)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  property: { $ref: '#/components/schemas/Property' }
+                  message:  { type: string }
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /properties/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+
+    get:
+      summary: Get property details (public)
+      operationId: getProperty
+      tags: [Properties]
+      responses:
+        "200":
+          description: Property detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Property' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+    put:
+      summary: Update property (owner or admin)
+      operationId: updateProperty
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PropertyCreate' }
+      responses:
+        "200": { description: Updated property }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+    delete:
+      summary: Delete property (owner or admin)
+      operationId: deleteProperty
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Deleted }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /properties/{id}/images:
+    post:
+      summary: Upload images for a property
+      operationId: uploadImages
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                images:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        "201": { description: Images uploaded }
+
+  /properties/my/listings:
+    get:
+      summary: List my own property listings
+      operationId: myListings
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: page,     in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Owner's listings }
+
+  /properties/{id}/save:
+    post:
+      summary: Toggle save/unsave a property
+      operationId: saveProperty
+      tags: [Properties]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Saved or unsaved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved:   { type: boolean }
+                  message: { type: string }
+
+  # ── Search ────────────────────────────────────────────────────────
+  /search:
+    get:
+      summary: Elasticsearch-powered advanced property search
+      operationId: advancedSearch
+      tags: [Search]
+      parameters:
+        - { name: q,          in: query, schema: { type: string }, description: Full-text search query }
+        - { name: category,   in: query, schema: { type: string, enum: [rent, short_stay, plot_sale] } }
+        - { name: county,     in: query, schema: { type: string } }
+        - { name: min_price,  in: query, schema: { type: number } }
+        - { name: max_price,  in: query, schema: { type: number } }
+        - { name: bedrooms,   in: query, schema: { type: integer } }
+        - { name: page,       in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page,   in: query, schema: { type: integer, default: 12 } }
+      responses:
+        "200":
+          description: Search results with pagination
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:       { type: array, items: { $ref: '#/components/schemas/Property' } }
+                  pagination: { $ref: '#/components/schemas/PaginationMeta' }
+                  query:      { type: string }
+                  filters:    { type: object }
+
+  # ── Inquiries ─────────────────────────────────────────────────────
+  /inquiries:
+    post:
+      summary: Send an inquiry about a property
+      operationId: createInquiry
+      tags: [Inquiries]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [property_id, name, message]
+              properties:
+                property_id: { type: string, format: uuid }
+                name:        { type: string }
+                email:       { type: string, format: email }
+                phone:       { type: string }
+                message:     { type: string, minLength: 10 }
+      responses:
+        "201": { description: Inquiry sent, lead captured }
+
+  /inquiries/my:
+    get:
+      summary: Get all inquiries for my properties (owner)
+      operationId: myInquiries
+      tags: [Inquiries]
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: page,     in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Paginated inquiries }
+
+  # ── Viewings ──────────────────────────────────────────────────────
+  /viewings:
+    post:
+      summary: Request a property viewing
+      operationId: createViewing
+      tags: [Viewings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [property_id, preferred_date]
+              properties:
+                property_id:    { type: string, format: uuid }
+                name:           { type: string }
+                phone:          { type: string }
+                email:          { type: string, format: email }
+                preferred_date: { type: string, format: date }
+                preferred_time: { type: string, example: "10:00" }
+                message:        { type: string }
+      responses:
+        "201": { description: Viewing request created }
+
+  /viewings/{id}/status:
+    put:
+      summary: Update viewing status (owner/admin)
+      operationId: updateViewingStatus
+      tags: [Viewings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:         { type: string, enum: [confirmed, cancelled, completed] }
+                confirmed_date: { type: string, format: date }
+                confirmed_time: { type: string }
+      responses:
+        "200": { description: Status updated }
+
+  # ── Payments ──────────────────────────────────────────────────────
+  /payments/initiate:
+    post:
+      summary: Initiate M-Pesa STK Push
+      operationId: initiatePayment
+      tags: [Payments]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:       { type: string, example: "254712345678" }
+                property_id: { type: string, format: uuid }
+                amount:      { type: number, example: 500 }
+      responses:
+        "200":
+          description: STK Push initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_id:          { type: string }
+                  checkout_request_id: { type: string }
+                  message:             { type: string }
+
+  /payments/callback:
+    post:
+      summary: M-Pesa payment callback (called by Safaricom)
+      operationId: mpesaCallback
+      tags: [Payments]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Callback processed }
+
+  /payments/status/{id}:
+    get:
+      summary: Get payment status
+      operationId: paymentStatus
+      tags: [Payments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment: { $ref: '#/components/schemas/Payment' }
+
+  # ── Admin ─────────────────────────────────────────────────────────
+  /admin/dashboard:
+    get:
+      summary: Admin dashboard statistics
+      operationId: adminDashboard
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Platform-wide stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:      { type: object }
+                  properties: { type: object }
+                  payments:   { type: object }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /admin/properties/{id}/verify:
+    put:
+      summary: Approve or reject a property listing
+      operationId: verifyProperty
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verification_status]
+              properties:
+                verification_status: { type: string, enum: [verified, rejected, pending] }
+                reason:              { type: string, description: Required when rejecting }
+      responses:
+        "200": { description: Verification status updated }
+
+  /admin/users:
+    get:
+      summary: List all users
+      operationId: adminListUsers
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: role,     in: query, schema: { type: string } }
+        - { name: q,        in: query, schema: { type: string } }
+        - { name: page,     in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Paginated users }
+
+  # ── SEO ───────────────────────────────────────────────────────────
+  /seo/robots.txt:
+    get:
+      summary: robots.txt for search engine crawlers
+      operationId: robotsTxt
+      tags: [SEO]
+      responses:
+        "200":
+          description: robots.txt file
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /seo/sitemap.xml:
+    get:
+      summary: Dynamic XML sitemap
+      operationId: sitemapXml
+      tags: [SEO]
+      responses:
+        "200":
+          description: Sitemap XML
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /seo/meta/property/{id}:
+    get:
+      summary: Open Graph / Twitter Card metadata for a property
+      operationId: propertyMeta
+      tags: [SEO]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Meta tags object
+          content:
+            application/json:
+              schema: { type: object }
+
+  /seo/resolve/{slug}:
+    get:
+      summary: Resolve a slug to a property ID
+      operationId: resolveSlug
+      tags: [SEO]
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string, example: "3-bedroom-apartment-kilimani-abc12345" }
+      responses:
+        "200":
+          description: Property ID resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  property_id:   { type: string }
+                  canonical_url: { type: string }
+
+  # ── Notifications ─────────────────────────────────────────────────
+  /notifications:
+    get:
+      summary: Get notification feed
+      operationId: listNotifications
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: page,     in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Notifications with unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications: { type: array }
+                  unread_count:  { type: integer }
+                  pagination:    { $ref: '#/components/schemas/PaginationMeta' }
+
+  /notifications/read-all:
+    put:
+      summary: Mark all notifications as read
+      operationId: markAllRead
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: All marked as read }

@@ -1,0 +1,134 @@
+# ═══════════════════════════════════════════════════════════════
+#  NyumbaLink — Render Blueprint (render.yaml)
+#  Defines the Flask API service on Render's free tier
+#  Docs: https://render.com/docs/blueprint-spec
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: nyumbalink-api
+    runtime: python
+    plan: free                          # Free tier — 750 hrs/month
+    region: oregon                      # us-west-2 (closest free region)
+    rootDir: backend
+
+    # ── Build ────────────────────────────────────────────────────
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+    # ── Start ────────────────────────────────────────────────────
+    # Free tier: 1 worker, no concurrency needed
+    startCommand: |
+      flask db upgrade &&
+      gunicorn app:app \
+        --bind 0.0.0.0:$PORT \
+        --workers 1 \
+        --timeout 120 \
+        --keep-alive 5 \
+        --max-requests 500 \
+        --access-logfile - \
+        --error-logfile -
+
+    # ── Health check ─────────────────────────────────────────────
+    healthCheckPath: /api/health
+
+    # ── Auto-deploy on push to main ──────────────────────────────
+    autoDeploy: true
+    branch: main
+
+    # ── Environment variables ────────────────────────────────────
+    # Set secret values in Render Dashboard → Environment tab
+    # Non-secret defaults are pre-filled here
+    envVars:
+      - key: FLASK_ENV
+        value: production
+
+      - key: PYTHON_VERSION
+        value: 3.12.0
+
+      # Injected from Render Secret — set in dashboard
+      - key: SECRET_KEY
+        sync: false
+
+      - key: JWT_SECRET_KEY
+        sync: false
+
+      # Supabase PostgreSQL connection string
+      # Format: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+      - key: DATABASE_URL
+        sync: false
+
+      # Redis — use Upstash free tier (set in dashboard)
+      - key: REDIS_URL
+        sync: false
+
+      # Cloudinary
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+      # M-Pesa Daraja
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_ENVIRONMENT
+        value: sandbox
+
+      # Callback must be the Render public URL
+      # e.g. https://nyumbalink-api.onrender.com/api/payments/callback
+      - key: MPESA_CALLBACK_URL
+        sync: false
+
+      # Email (Gmail app password)
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+
+      # Twilio WhatsApp (optional)
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+
+      # CORS — allow Vercel frontend
+      # e.g. https://nyumbalink.vercel.app,https://nyumbalink.co.ke
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Logging
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_DIR
+        value: /tmp/logs
+
+      # Pagination defaults
+      - key: DEFAULT_PAGE_SIZE
+        value: "12"
+      - key: MAX_PAGE_SIZE
+        value: "50"
+
+      - key: LISTING_FEE_KES
+        value: "500"
+
+      # Elasticsearch — optional, disabled on free tier
+      # Use Bonsai free tier: https://app.bonsai.io
+      - key: ELASTICSEARCH_URL
+        sync: false

@@ -1,0 +1,30 @@
+name: Keep Render Awake
+
+# Render free tier sleeps after 15 min of inactivity.
+# This workflow pings the health endpoint every 10 minutes
+# to prevent cold starts during business hours (EAT 06:00–23:00).
+
+on:
+  schedule:
+    # Every 10 minutes, 03:00–20:00 UTC = 06:00–23:00 EAT
+    - cron: "*/10 3-20 * * *"
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: 🏓 Ping API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "$(date -u) — Pinging NyumbaLink API..."
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            https://nyumbalink-api.onrender.com/api/health)
+          if [ "$HTTP" -eq 200 ]; then
+            echo "✅ API is awake (HTTP 200)"
+          else
+            echo "⚠️  API returned HTTP $HTTP (may be waking up)"
+          fi
