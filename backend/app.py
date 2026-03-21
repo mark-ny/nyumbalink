@@ -50,6 +50,7 @@ def create_app(config_name=None):
     from routes.payments     import payments_bp
     from routes.search       import search_bp, notifications_bp
     from routes.seo          import seo_bp
+    from routes.verification import verification_bp
     from routes.swagger      import swagger_bp
 
     app.register_blueprint(auth_bp)
@@ -61,6 +62,7 @@ def create_app(config_name=None):
     app.register_blueprint(search_bp)
     app.register_blueprint(notifications_bp)
     app.register_blueprint(seo_bp)
+    app.register_blueprint(verification_bp)
     app.register_blueprint(swagger_bp)
 
     @app.route('/api/health')
