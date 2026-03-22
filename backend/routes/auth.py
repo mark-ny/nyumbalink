@@ -6,7 +6,6 @@ from flask_jwt_extended import (
 from marshmallow import Schema, fields, validate, ValidationError
 from models import db, User, RefreshToken
 from middleware.auth import admin_required
-from services.notification_service import send_welcome_email
 from datetime import datetime, timedelta
 import uuid
 
@@ -51,9 +50,7 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    # Send welcome email async
     try:
-        send_welcome_email(user.email, user.name)
     except Exception:
         pass
 
