@@ -29,7 +29,6 @@ class LoginSchema(Schema):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     schema = RegisterSchema()
-    try:
         data = schema.load(request.json or {})
     except ValidationError as e:
         return jsonify({'error': 'Validation failed', 'details': e.messages}), 400
@@ -50,9 +49,6 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    try:
-    except Exception:
-        pass
 
     access_token = create_access_token(identity=user.id, additional_claims={'role': user.role})
     refresh_token = create_refresh_token(identity=user.id)
@@ -71,7 +67,6 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     schema = LoginSchema()
-    try:
         data = schema.load(request.json or {})
     except ValidationError as e:
         return jsonify({'error': 'Validation failed', 'details': e.messages}), 400
