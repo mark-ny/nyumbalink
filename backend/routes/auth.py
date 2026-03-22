@@ -12,7 +12,6 @@ import uuid
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
-# Schemas
 class RegisterSchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=2, max=255))
     email = fields.Email(required=True)
@@ -29,11 +28,11 @@ class LoginSchema(Schema):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     schema = RegisterSchema()
+    try:
         data = schema.load(request.json or {})
     except ValidationError as e:
         return jsonify({'error': 'Validation failed', 'details': e.messages}), 400
 
-    # Check existing
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'Email already registered'}), 409
 
@@ -45,15 +44,11 @@ def register():
         role=data.get('role', 'seeker'),
     )
     user.set_password(data['password'])
-
     db.session.add(user)
     db.session.commit()
 
-
     access_token = create_access_token(identity=user.id, additional_claims={'role': user.role})
     refresh_token = create_refresh_token(identity=user.id)
-
-    # Save refresh token
     _save_refresh_token(user.id, refresh_token)
 
     return jsonify({
@@ -67,6 +62,7 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     schema = LoginSchema()
+    try:
         data = schema.load(request.json or {})
     except ValidationError as e:
         return jsonify({'error': 'Validation failed', 'details': e.messages}), 400
@@ -81,7 +77,6 @@ def login():
 
     access_token = create_access_token(identity=user.id, additional_claims={'role': user.role})
     refresh_token = create_refresh_token(identity=user.id)
-
     _save_refresh_token(user.id, refresh_token)
 
     return jsonify({
@@ -97,10 +92,8 @@ def login():
 def refresh():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
-
     if not user or not user.is_active:
         return jsonify({'error': 'User not found or inactive'}), 401
-
     access_token = create_access_token(identity=user.id, additional_claims={'role': user.role})
     return jsonify({'access_token': access_token}), 200
 
@@ -122,13 +115,10 @@ def update_me():
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-
     data = request.json or {}
-    allowed = ['name', 'phone']
-    for field in allowed:
+    for field in ['name', 'phone']:
         if field in data:
             setattr(user, field, data[field])
-
     db.session.commit()
     return jsonify({'user': user.to_private_dict()}), 200
 
@@ -139,14 +129,11 @@ def change_password():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     data = request.json or {}
-
     if not user.check_password(data.get('current_password', '')):
         return jsonify({'error': 'Current password is incorrect'}), 400
-
     new_pass = data.get('new_password', '')
     if len(new_pass) < 8:
         return jsonify({'error': 'Password must be at least 8 characters'}), 400
-
     user.set_password(new_pass)
     db.session.commit()
     return jsonify({'message': 'Password changed successfully'}), 200
@@ -156,7 +143,6 @@ def change_password():
 @jwt_required()
 def logout():
     user_id = get_jwt_identity()
-    # Revoke refresh tokens for this user
     RefreshToken.query.filter_by(user_id=user_id).delete()
     db.session.commit()
     return jsonify({'message': 'Logged out successfully'}), 200
