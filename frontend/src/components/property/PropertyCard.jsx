@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Bed, Bath, Maximize2, Heart, Star, Eye, CheckCircle } from 'lucide-react';
+import { MapPin, Bed, Bath, Maximize2, Heart, Star, Eye, CheckCircle, ImageOff } from 'lucide-react';
 import { propertiesAPI } from '../../services/api';
 import useAuthStore from '../../hooks/useAuthStore';
 import toast from 'react-hot-toast';
@@ -28,8 +28,18 @@ function formatPrice(price, period) {
   return formatted;
 }
 
+function NoImagePlaceholder() {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400 gap-2">
+      <ImageOff size={32} strokeWidth={1.5} />
+      <span className="text-xs font-medium">No image</span>
+    </div>
+  );
+}
+
 export default function PropertyCard({ property, compact = false }) {
   const [saved, setSaved] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const { isAuthenticated } = useAuthStore();
 
   const handleSave = async (e) => {
@@ -48,9 +58,13 @@ export default function PropertyCard({ property, compact = false }) {
     }
   };
 
-  const image = property.primary_image?.image_url
-    || property.images?.[0]?.image_url
-    || '/placeholder-property.jpg';
+  const rawImageUrl =
+    property.primary_image?.image_url ||
+    property.images?.[0]?.image_url ||
+    null;
+
+  const imageUrl = rawImageUrl ? rawImageUrl.replace('http://', 'https://') : null;
+  const showImage = imageUrl && !imgError;
 
   return (
     <Link
@@ -60,16 +74,19 @@ export default function PropertyCard({ property, compact = false }) {
         compact ? 'h-64' : ''
       )}
     >
-      {/* Image */}
       <div className="relative overflow-hidden aspect-[4/3] bg-gray-100">
-        <img
-          src={image}
-          alt={property.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          loading="lazy"
-        />
+        {showImage ? (
+          <img
+            src={imageUrl}
+            alt={property.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <NoImagePlaceholder />
+        )}
 
-        {/* Badges */}
         <div className="absolute top-3 left-3 flex gap-2">
           <span className={clsx('px-2.5 py-1 rounded-lg text-xs font-semibold', CATEGORY_COLORS[property.category])}>
             {CATEGORY_LABELS[property.category]}
@@ -81,27 +98,22 @@ export default function PropertyCard({ property, compact = false }) {
           )}
         </div>
 
-        {/* Save button */}
         <button
           onClick={handleSave}
           className={clsx(
             'absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center transition-all',
-            saved
-              ? 'bg-red-500 text-white'
-              : 'bg-white/80 text-gray-600 hover:bg-white hover:text-red-500'
+            saved ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-600 hover:bg-white hover:text-red-500'
           )}
         >
           <Heart size={15} fill={saved ? 'currentColor' : 'none'} />
         </button>
 
-        {/* Views */}
         <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-black/40 text-white px-2 py-0.5 rounded-md text-xs">
           <Eye size={11} />
           {property.views_count || 0}
         </div>
       </div>
 
-      {/* Content */}
       <div className="p-4 flex flex-col flex-1">
         <div className="flex items-start justify-between gap-2 mb-2">
           <h3 className="font-semibold text-dark-900 text-sm leading-snug line-clamp-2 flex-1">
@@ -117,7 +129,6 @@ export default function PropertyCard({ property, compact = false }) {
           <span className="truncate">{property.town || property.county || property.location}</span>
         </div>
 
-        {/* Features */}
         {!compact && (
           <div className="flex items-center gap-3 text-xs text-gray-600 mb-3">
             {property.bedrooms != null && (
@@ -141,7 +152,6 @@ export default function PropertyCard({ property, compact = false }) {
           </div>
         )}
 
-        {/* Price */}
         <div className="mt-auto pt-3 border-t border-gray-50">
           <p className="text-primary-600 font-bold text-base">
             {formatPrice(property.price, property.price_period)}

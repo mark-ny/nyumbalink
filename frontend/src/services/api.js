@@ -8,7 +8,6 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor – attach JWT
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token');
@@ -18,7 +17,6 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor – handle 401 / token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -28,7 +26,6 @@ api.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (!refreshToken) throw new Error('No refresh token');
-
         const res = await axios.post(`${API_URL}/auth/refresh`, {}, {
           headers: { Authorization: `Bearer ${refreshToken}` },
         });
@@ -47,7 +44,6 @@ api.interceptors.response.use(
   }
 );
 
-// ── Auth ──────────────────────────────────────────────────────────────
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
@@ -57,42 +53,48 @@ export const authAPI = {
   logout: () => api.post('/auth/logout'),
 };
 
-// ── Properties ────────────────────────────────────────────────────────
 export const propertiesAPI = {
   list: (params) => api.get('/properties', { params }),
   get: (id) => api.get(`/properties/${id}`),
   create: (data) => api.post('/properties', data),
   update: (id, data) => api.put(`/properties/${id}`, data),
   delete: (id) => api.delete(`/properties/${id}`),
-  uploadImages: (id, formData) => api.post(`/properties/${id}/images`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
+  uploadImages: (id, filesOrFormData) => {
+    let formData;
+    if (filesOrFormData instanceof FormData) {
+      formData = filesOrFormData;
+    } else {
+      formData = new FormData();
+      const files = Array.isArray(filesOrFormData) ? filesOrFormData : [filesOrFormData];
+      files.forEach((file) => formData.append('images', file));
+    }
+    return api.post(`/properties/${id}/images`, formData, {
+      headers: { 'Content-Type': undefined },
+      timeout: 60000,
+    });
+  },
   deleteImage: (propertyId, imageId) => api.delete(`/properties/${propertyId}/images/${imageId}`),
   myListings: (params) => api.get('/properties/my/listings', { params }),
   saved: () => api.get('/properties/saved'),
   save: (id) => api.post(`/properties/${id}/save`),
 };
 
-// ── Search ────────────────────────────────────────────────────────────
 export const searchAPI = {
   search: (params) => api.get('/search', { params }),
 };
 
-// ── Inquiries ─────────────────────────────────────────────────────────
 export const inquiriesAPI = {
   create: (data) => api.post('/inquiries', data),
   myInquiries: (params) => api.get('/inquiries/my', { params }),
   byProperty: (propertyId, params) => api.get(`/inquiries/property/${propertyId}`, { params }),
 };
 
-// ── Viewings ──────────────────────────────────────────────────────────
 export const viewingsAPI = {
   create: (data) => api.post('/viewings', data),
   my: (params) => api.get('/viewings/my', { params }),
   updateStatus: (id, data) => api.put(`/viewings/${id}/status`, data),
 };
 
-// ── Payments ──────────────────────────────────────────────────────────
 export const paymentsAPI = {
   initiate: (data) => api.post('/payments/initiate', data),
   status: (id) => api.get(`/payments/status/${id}`),
@@ -100,7 +102,6 @@ export const paymentsAPI = {
   my: () => api.get('/payments/my'),
 };
 
-// ── Admin ─────────────────────────────────────────────────────────────
 export const adminAPI = {
   dashboard: () => api.get('/admin/dashboard'),
   properties: (params) => api.get('/admin/properties', { params }),
@@ -113,7 +114,6 @@ export const adminAPI = {
   payments: (params) => api.get('/admin/payments', { params }),
 };
 
-// ── Notifications ─────────────────────────────────────────────────────
 export const notificationsAPI = {
   list: (params) => api.get('/notifications', { params }),
   markRead: (id) => api.put(`/notifications/${id}/read`),
