@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { propertiesAPI } from '../services/api';
+import api from '../services/api';
 import toast from 'react-hot-toast';
 
 const CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME || 'dxxghgi46';
@@ -62,7 +63,7 @@ export default function CreateListingPage() {
     }
     setLoading(true);
     try {
-      // Create property
+      // Step 1: Create the property
       const res = await propertiesAPI.create({
         ...form,
         price: parseFloat(form.price),
@@ -71,21 +72,16 @@ export default function CreateListingPage() {
       });
       const propertyId = res.data.property.id;
 
-      // Upload images via backend
-      const formData = new FormData();
-      // We already uploaded to Cloudinary directly, so just attach URLs
-      // Create a simple text file with URLs to send
-      for (let i = 0; i < images.length; i++) {
-        const blob = await fetch(images[i].url).then(r => r.blob());
-        formData.append('images', blob, `image_${i}.jpg`);
-      }
-
-      try {
-        await propertiesAPI.uploadImages(propertyId, formData);
-      } catch (imgErr) {
-        // Images may fail but property is created
-        console.log('Image link error:', imgErr);
-      }
+      // Step 2: Save Cloudinary URLs directly to backend
+      // No re-uploading — just send the URLs we already have
+      await api.post(`/properties/${propertyId}/images/urls`, {
+        images: images.map((img, i) => ({
+          image_url: img.url,
+          public_id: img.public_id,
+          is_primary: i === 0,
+          sort_order: i,
+        }))
+      });
 
       toast.success('Property created successfully!');
       navigate(`/properties/${propertyId}`);
@@ -118,7 +114,7 @@ export default function CreateListingPage() {
             style={{
               border: '2px dashed #d1d5db', borderRadius: 12, padding: 24,
               textAlign: 'center', cursor: uploading ? 'wait' : 'pointer',
-              background: '#f9fafb', transition: 'border-color 0.2s',
+              background: '#f9fafb',
             }}
           >
             <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
@@ -138,7 +134,6 @@ export default function CreateListingPage() {
             />
           </div>
 
-          {/* Image previews */}
           {images.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
               {images.map((img, i) => (
@@ -167,7 +162,6 @@ export default function CreateListingPage() {
           )}
         </div>
 
-        {/* Title */}
         <div>
           <label style={labelStyle}>Property Title *</label>
           <input
@@ -178,7 +172,6 @@ export default function CreateListingPage() {
           />
         </div>
 
-        {/* Category + Price Period */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={labelStyle}>Category *</label>
@@ -199,7 +192,6 @@ export default function CreateListingPage() {
           </div>
         </div>
 
-        {/* Price */}
         <div>
           <label style={labelStyle}>Price (KES) *</label>
           <input
@@ -210,7 +202,6 @@ export default function CreateListingPage() {
           />
         </div>
 
-        {/* Bedrooms + Bathrooms */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={labelStyle}>Bedrooms</label>
@@ -232,7 +223,6 @@ export default function CreateListingPage() {
           </div>
         </div>
 
-        {/* Location */}
         <div>
           <label style={labelStyle}>Full Address / Estate *</label>
           <input
@@ -243,7 +233,6 @@ export default function CreateListingPage() {
           />
         </div>
 
-        {/* County + Town */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={labelStyle}>County</label>
@@ -266,13 +255,12 @@ export default function CreateListingPage() {
           </div>
         </div>
 
-        {/* Description */}
         <div>
           <label style={labelStyle}>Description</label>
           <textarea
             value={form.description}
             onChange={e => setForm(p => ({...p, description: e.target.value}))}
-            placeholder="Describe the property — features, nearby amenities, condition..."
+            placeholder="Describe the property..."
             rows={4}
             style={{ ...inputStyle, resize: 'vertical' }}
           />
@@ -288,7 +276,7 @@ export default function CreateListingPage() {
             cursor: loading || uploading ? 'not-allowed' : 'pointer',
           }}
         >
-          {loading ? 'Creating Property...' : uploading ? 'Uploading Images...' : '🏠 Create Listing'}
+          {loading ? 'Creating...' : uploading ? 'Uploading Images...' : '🏠 Create Listing'}
         </button>
       </form>
     </div>

@@ -362,3 +362,46 @@ def save_property(property_id):
     db.session.add(sp)
     db.session.commit()
     return jsonify({'saved': True, 'message': 'Property saved'}), 201
+
+
+@properties_bp.route('/<property_id>/images/urls', methods=['POST'])
+@jwt_required()
+def save_image_urls(property_id):
+    """Save Cloudinary URLs directly — no re-upload needed"""
+    user_id = get_jwt_identity()
+    claims = get_jwt()
+    prop = Property.query.get_or_404(property_id)
+
+    if prop.owner_id != user_id and claims.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    images_data = data.get('images', [])
+
+    if not images_data:
+        return jsonify({'error': 'No image URLs provided'}), 400
+
+    saved = []
+    for item in images_data:
+        image_url = item.get('image_url', '').replace('http://', 'https://')
+        if not image_url:
+            continue
+        img = PropertyImage(
+            id=str(uuid.uuid4()),
+            property_id=property_id,
+            image_url=image_url,
+            public_id=item.get('public_id'),
+            is_primary=item.get('is_primary', False),
+            sort_order=item.get('sort_order', 0),
+        )
+        db.session.add(img)
+        saved.append(img)
+
+    db.session.commit()
+    invalidate_pattern(f'property:{property_id}')
+    invalidate_pattern('properties:*')
+
+    return jsonify({
+        'images': [img.to_dict() for img in saved],
+        'message': f'{len(saved)} image(s) saved'
+    }), 201
